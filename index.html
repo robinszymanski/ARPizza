@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AR Pizza - Brüche üben</title>
+    <style>
+        /* Grundlegendes Reset und Fullscreen */
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #000;
+            color: #333;
+        }
+
+        /* 2D DOM Overlay - Hier passiert die Interaktion */
+        #ui-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none; /* Klicks gehen durch auf den Touch-Layer, es sei denn es ist ein Button */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            z-index: 10;
+        }
+
+        /* Unsichtbarer Layer, der Wischgesten einfängt, ohne das DOM zu blockieren */
+        #touch-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: auto;
+            z-index: 5;
+        }
+
+        /* Alle interaktiven UI-Elemente wieder klickbar machen */
+        .interactive {
+            pointer-events: auto;
+        }
+
+        /* Header (Punkte) */
+        #header {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px 20px;
+            margin: 15px;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+            font-size: 1.2rem;
+            display: none; /* Wird angezeigt, wenn AR startet */
+        }
+
+        /* Haupt-Aufgabenbox unten */
+        #task-panel {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            margin: 15px;
+            border-radius: 20px;
+            box-shadow: 0 -4px 15px rgba(0,0,0,0.15);
+            text-align: center;
+            display: none;
+            padding-bottom: max(20px, env(safe-area-inset-bottom));
+        }
+
+        .task-title {
+            font-size: 1.3rem;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #d35400;
+        }
+
+        .task-instruction {
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+        }
+
+        /* Aufgabe 1: Bruch-Eingabe */
+        #task-1-ui { display: none; }
+        .fraction-input {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            vertical-align: middle;
+            margin: 0 10px;
+        }
+        .fraction-input input {
+            width: 60px;
+            height: 50px;
+            text-align: center;
+            font-size: 1.5rem;
+            border: 2px solid #bdc3c7;
+            border-radius: 8px;
+            background: #fff;
+        }
+        .fraction-line {
+            width: 100%;
+            height: 4px;
+            background-color: #333;
+            margin: 5px 0;
+            border-radius: 2px;
+        }
+
+        /* Aufgabe 2: Schneiden & Auswählen */
+        #task-2-cut-ui, #task-2-select-ui { display: none; }
+        
+        .button-group {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 15px;
+            gap: 10px;
+        }
+
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 1.1rem;
+            border-radius: 10px;
+            font-weight: bold;
+            box-shadow: 0 4px 0 #2980b9;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        button:active {
+            transform: translateY(4px);
+            box-shadow: 0 0 0 #2980b9;
+        }
+        button.secondary {
+            background-color: #95a5a6;
+            box-shadow: 0 4px 0 #7f8c8d;
+        }
+        button.success {
+            background-color: #2ecc71;
+            box-shadow: 0 4px 0 #27ae60;
+        }
+
+        /* Feedback Toast Overlay */
+        #feedback-toast {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 30px;
+            border-radius: 15px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: white;
+            text-align: center;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 20;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        .feedback-success { background-color: #2ecc71; }
+        .feedback-error { background-color: #e74c3c; }
+
+        /* Start Screen Info */
+        #start-info {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            text-align: center;
+            font-size: 1.2rem;
+            width: 80%;
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.8);
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Touch-Layer für das Abfangen der Wischgesten -->
+    <div id="touch-layer"></div>
+
+    <div id="ui-container">
+        <div id="header" class="interactive">
+            <span>🍕 Pizza-Brüche</span>
+            <span>Punkte: <span id="score">0</span></span>
+        </div>
+
+        <div id="task-panel" class="interactive">
+            <!-- Aufgabe 1: Welcher Bruch ist das? -->
+            <div id="task-1-ui">
+                <div class="task-title">Aufgabe 1</div>
+                <div class="task-instruction">Welcher Bruch liegt auf dem Tisch?</div>
+                <div>
+                    Ich sehe: 
+                    <div class="fraction-input">
+                        <input type="number" id="input-numerator" placeholder="?" inputmode="numeric">
+                        <div class="fraction-line"></div>
+                        <input type="number" id="input-denominator" placeholder="?" inputmode="numeric">
+                    </div>
+                </div>
+                <div class="button-group">
+                    <button class="success" id="btn-check-task1">Prüfen</button>
+                </div>
+            </div>
+
+            <!-- Aufgabe 2 (Schritt 1): Pizza schneiden -->
+            <div id="task-2-cut-ui">
+                <div class="task-title">Aufgabe 2 (Schneiden)</div>
+                <div class="task-instruction" id="instruction-cut">Schneide die Pizza in X Stücke! (Wische über den Bildschirm)</div>
+                <div class="button-group">
+                    <button class="secondary" id="btn-undo-cut">Rückgängig</button>
+                    <button class="success" id="btn-finish-cut">Fertig geschnitten!</button>
+                </div>
+            </div>
+
+            <!-- Aufgabe 2 (Schritt 2): Stücke auswählen -->
+            <div id="task-2-select-ui">
+                <div class="task-title">Aufgabe 2 (Auswählen)</div>
+                <div class="task-instruction" id="instruction-select">Wähle nun Y Stücke aus, indem du sie antippst!</div>
+                <div class="button-group">
+                    <button class="success" id="btn-check-task2">Prüfen</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="feedback-toast">Feedback</div>
+    <div id="start-info">Suche mit der Kamera eine freie Tischfläche. Sobald der Ring erscheint, tippe auf den Bildschirm!</div>
+
+    <!-- Three.js und WebXR Bibliotheken -->
+    <script type="module">
+        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js';
+        import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/ARButton.js';
+
+        // --- Globale Variablen ---
+        let camera, scene, renderer;
+        let reticle;
+        let hitTestSource = null;
+        let hitTestSourceRequested = false;
+        
+        let gameState = 'INIT'; // INIT, FINDING_SURFACE, PLACING, TASK1, TASK2_CUT, TASK2_SELECT
+        let score = 0;
+        let currentTask = null; // Speichert Zähler und Nenner der aktuellen Aufgabe
+        
+        // Pizza Objekte
+        let pizzaGroup = new THREE.Group();
+        let pizzaHitPlane; // Unsichtbare Ebene für Raycasting (Schneiden/Tippen)
+        const PIZZA_RADIUS = 0.15; // 15cm Radius in AR
+        
+        // Aufgabe 2 Daten
+        let swipeStartPoint = null;
+        let currentTempLine = null;
+        let cutAngles = []; // Speichert die Winkel der Schnitte
+        let cutLines = []; // Visuelle Linien
+        let selectionWedges = []; // Die klickbaren Stücke nach dem Schneiden
+        let selectedCount = 0;
+
+        // Erlaubte Nenner für die 5. Klasse
+        const allowedDenominators = [2, 3, 4, 5, 6, 8, 10];
+
+        init();
+        animate();
+
+        function init() {
+            const container = document.createElement('div');
+            document.body.appendChild(container);
+
+            scene = new THREE.Scene();
+
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+
+            // Licht
+            const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+            light.position.set(0.5, 1, 0.25);
+            scene.add(light);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            dirLight.position.set(0, 2, 0);
+            scene.add(dirLight);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            // AR Button hinzufügen (mit DOM Overlay Unterstützung)
+            document.body.appendChild(ARButton.createButton(renderer, { 
+                requiredFeatures: ['hit-test'],
+                optionalFeatures: ['dom-overlay'],
+                domOverlay: { root: document.getElementById('ui-container') }
+            }));
+
+            // Reticle (Zielkreuz zum Platzieren)
+            const reticleGeometry = new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2);
+            const reticleMaterial = new THREE.MeshBasicMaterial({ color: 0x2ecc71 });
+            reticle = new THREE.Mesh(reticleGeometry, reticleMaterial);
+            reticle.matrixAutoUpdate = false;
+            reticle.visible = false;
+            scene.add(reticle);
+
+            // Unsichtbare Ebene für Raycasting
+            const planeGeo = new THREE.PlaneGeometry(10, 10).rotateX(-Math.PI / 2);
+            const planeMat = new THREE.MeshBasicMaterial({ visible: false });
+            pizzaHitPlane = new THREE.Mesh(planeGeo, planeMat);
+            scene.add(pizzaHitPlane); // Bewegt sich später zur Pizza
+
+            // Events
+            const controller = renderer.xr.getController(0);
+            controller.addEventListener('select', onXRSelect);
+            scene.add(controller);
+
+            window.addEventListener('resize', onWindowResize);
+
+            // Touch-Events für Wischen (Aufgabe 2)
+            const touchLayer = document.getElementById('touch-layer');
+            touchLayer.addEventListener('touchstart', onTouchDown);
+            touchLayer.addEventListener('touchmove', onTouchMove);
+            touchLayer.addEventListener('touchend', onTouchUp);
+
+            // Button Event Listener
+            document.getElementById('btn-check-task1').addEventListener('click', checkTask1);
+            document.getElementById('btn-undo-cut').addEventListener('click', undoCut);
+            document.getElementById('btn-finish-cut').addEventListener('click', finishCutting);
+            document.getElementById('btn-check-task2').addEventListener('click', checkTask2);
+
+            renderer.xr.addEventListener('sessionstart', () => {
+                gameState = 'FINDING_SURFACE';
+                document.getElementById('start-info').style.display = 'block';
+            });
+        }
+
+        // --- AR Platzierung ---
+        function onXRSelect() {
+            if (gameState === 'FINDING_SURFACE' && reticle.visible) {
+                // Pizza platzieren
+                pizzaGroup.position.setFromMatrixPosition(reticle.matrix);
+                pizzaHitPlane.position.copy(pizzaGroup.position);
+                scene.add(pizzaGroup);
+                
+                gameState = 'PLAYING';
+                reticle.visible = false;
+                document.getElementById('start-info').style.display = 'none';
+                document.getElementById('header').style.display = 'flex';
+                
+                startRandomTask();
+            }
+        }
+
+        // --- Spiel-Logik & Aufgaben-Generierung ---
+        function startRandomTask() {
+            // Alte Elemente aufräumen
+            clearPizza();
+            resetTaskUI();
+
+            // Zufälligen Bruch erstellen
+            const den = allowedDenominators[Math.floor(Math.random() * allowedDenominators.length)];
+            const num = Math.floor(Math.random() * (den - 1)) + 1; // 1 bis Nenner-1
+            currentTask = { numerator: num, denominator: den };
+
+            // Zufällig Aufgabe 1 oder 2 wählen (50/50)
+            const type = Math.random() < 0.5 ? 1 : 2;
+
+            if (type === 1) {
+                setupTask1(num, den);
+            } else {
+                setupTask2(num, den);
+            }
+        }
+
+        function resetTaskUI() {
+            document.getElementById('task-panel').style.display = 'none';
+            document.getElementById('task-1-ui').style.display = 'none';
+            document.getElementById('task-2-cut-ui').style.display = 'none';
+            document.getElementById('task-2-select-ui').style.display = 'none';
+            document.getElementById('input-numerator').value = '';
+            document.getElementById('input-denominator').value = '';
+        }
+
+        function clearPizza() {
+            while(pizzaGroup.children.length > 0){ 
+                pizzaGroup.remove(pizzaGroup.children[0]); 
+            }
+            cutAngles = [];
+            cutLines.forEach(line => scene.remove(line));
+            cutLines = [];
+            selectionWedges.forEach(wedge => scene.remove(wedge));
+            selectionWedges = [];
+            if(currentTempLine) { scene.remove(currentTempLine); currentTempLine = null; }
+        }
+
+        // --- Aufgabe 1: Bruch erkennen ---
+        function setupTask1(num, den) {
+            gameState = 'TASK1';
+            
+            // Pizza mit N Stücken rendern (unvollständig)
+            const anglePerSlice = (Math.PI * 2) / den;
+            const gap = 0.05; // kleiner Spalt zwischen Stücken zur besseren Sichtbarkeit
+
+            for (let i = 0; i < num; i++) {
+                createPizzaSlice(i * anglePerSlice, anglePerSlice - gap);
+            }
+
+            document.getElementById('task-panel').style.display = 'block';
+            document.getElementById('task-1-ui').style.display = 'block';
+        }
+
+        function checkTask1() {
+            const numIn = parseInt(document.getElementById('input-numerator').value);
+            const denIn = parseInt(document.getElementById('input-denominator').value);
+
+            if (isNaN(numIn) || isNaN(denIn)) {
+                showFeedback("Bitte trage beide Zahlen ein!", false);
+                return;
+            }
+
+            // Prüfen ob gleich (erweitern/kürzen für 5. Klasse erlaubt, aber am besten exakt)
+            // Um Frust zu vermeiden, akzeptieren wir mathematisch korrekte Äquivalenz
+            if (numIn / denIn === currentTask.numerator / currentTask.denominator) {
+                showFeedback("Richtig! Super!", true);
+                score++;
+                document.getElementById('score').innerText = score;
+                setTimeout(startRandomTask, 2000); // Nächste Aufgabe nach 2 Sekunden
+            } else {
+                showFeedback("Nicht ganz richtig. Zähle die Stücke genau!", false);
+            }
+        }
+
+        // --- Aufgabe 2: Schneiden & Auswählen ---
+        function setupTask2(num, den) {
+            gameState = 'TASK2_CUT';
+            
+            // Komplette Pizza rendern
+            createPizzaSlice(0, Math.PI * 2);
+
+            document.getElementById('instruction-cut').innerText = `Stelle den Bruch ${num}/${den} dar.\nSchritt 1: Schneide die Pizza in ${den} gleich große Stücke!`;
+            
+            document.getElementById('task-panel').style.display = 'block';
+            document.getElementById('task-2-cut-ui').style.display = 'block';
+        }
+
+        // Hilfsfunktion zum Raycasten von Touch-Koordinaten auf die Pizza-Ebene
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        function getPizzaIntersection(e) {
+            const touch = e.changedTouches ? e.changedTouches[0] : e;
+            mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(touch.clientY / window.innerHeight) * 2 - 1; // ACHTUNG: CSS/DOM Overlay macht y umgekehrt, aber TouchEvent hat normale Koordinaten
+            mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(pizzaHitPlane);
+            if (intersects.length > 0) {
+                // Wandle Weltkoordinaten in lokale Pizza-Koordinaten um
+                const point = intersects[0].point.clone();
+                pizzaGroup.worldToLocal(point);
+                return point;
+            }
+            return null;
+        }
+
+        function onTouchDown(e) {
+            if (gameState === 'TASK2_CUT') {
+                const pt = getPizzaIntersection(e);
+                if (pt) swipeStartPoint = pt;
+            } else if (gameState === 'TASK2_SELECT') {
+                const pt = getPizzaIntersection(e);
+                if (pt) handleSelectTap(pt);
+            }
+        }
+
+        function onTouchMove(e) {
+            if (gameState === 'TASK2_CUT' && swipeStartPoint) {
+                const pt = getPizzaIntersection(e);
+                if (pt) {
+                    drawTempLine(swipeStartPoint, pt);
+                }
+            }
+        }
+
+        function onTouchUp(e) {
+            if (gameState === 'TASK2_CUT' && swipeStartPoint) {
+                const pt = getPizzaIntersection(e);
+                if (pt) {
+                    processSwipeCut(swipeStartPoint, pt);
+                }
+                swipeStartPoint = null;
+                if(currentTempLine) {
+                    pizzaGroup.remove(currentTempLine);
+                    currentTempLine = null;
+                }
+            }
+        }
+
+        function drawTempLine(start, end) {
+            if(currentTempLine) pizzaGroup.remove(currentTempLine);
+            const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 3 });
+            const points = [new THREE.Vector3(start.x, 0.01, start.z), new THREE.Vector3(end.x, 0.01, end.z)];
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            currentTempLine = new THREE.Line(geometry, material);
+            pizzaGroup.add(currentTempLine);
+        }
+
+        // Schneide-Logik mit Toleranz für Schüler
+        function processSwipeCut(start, end) {
+            const vec = new THREE.Vector2(end.x - start.x, end.z - start.z);
+            const len = vec.length();
+            if (len < 0.05) return; // Zu kurz, ignorieren
+
+            const startRadius = Math.sqrt(start.x*start.x + start.z*start.z);
+            
+            // Distanz der Linie zum Zentrum (0,0) berechnen
+            // Formel: |A.x * V.z - A.z * V.x| / |V|
+            const distToCenter = Math.abs(start.x * vec.y - start.z * vec.x) / len;
+
+            const TOLERANCE = PIZZA_RADIUS * 0.45; // Sehr großzügig: 45% des Radius Toleranz!
+
+            if (distToCenter < TOLERANCE) {
+                // Zieht ungefähr durch die Mitte -> Wir machen einen sauberen Schnitt quer durch!
+                let angle = Math.atan2(vec.y, vec.x); // y hier ist Z in 3D
+                
+                // Winkel normieren (0 bis 2PI)
+                if (angle < 0) angle += Math.PI * 2;
+                let opposite = (angle + Math.PI) % (Math.PI * 2);
+
+                addCutLine(angle, true); // True = ganzer Schnitt quer rüber
+                cutAngles.push(angle);
+                cutAngles.push(opposite);
+            } 
+            else if (startRadius < TOLERANCE) {
+                // Fängt in der Mitte an und zieht nach außen (Halber Schnitt, z.B. für Drittel)
+                let angle = Math.atan2(end.z - start.z, end.x - start.x);
+                if (angle < 0) angle += Math.PI * 2;
+                
+                addCutLine(angle, false); // False = halber Schnitt von Mitte zum Rand
+                cutAngles.push(angle);
+            }
+        }
+
+        function addCutLine(angle, isFull) {
+            const material = new THREE.MeshBasicMaterial({ color: 0x3e2723 }); // Dunkelbrauner "Schnitt"
+            const length = isFull ? PIZZA_RADIUS * 2.1 : PIZZA_RADIUS * 1.05;
+            const geometry = new THREE.BoxGeometry(length, 0.02, 0.005);
+            const mesh = new THREE.Mesh(geometry, material);
+            
+            // Positionieren
+            if (isFull) {
+                mesh.position.set(0, 0.015, 0);
+            } else {
+                mesh.position.set(Math.cos(angle) * PIZZA_RADIUS / 2, 0.015, Math.sin(angle) * PIZZA_RADIUS / 2);
+            }
+            
+            mesh.rotation.y = -angle; // ThreeJS Y-Rotation
+            pizzaGroup.add(mesh);
+            cutLines.push(mesh);
+        }
+
+        function undoCut() {
+            if (cutLines.length > 0) {
+                const lastLine = cutLines.pop();
+                pizzaGroup.remove(lastLine);
+                // Winkel entfernen (1 oder 2 je nach Art des Schnitts)
+                // Da wir das schwer trennen können, einfache Lösung: Wenn rückgängig, alles löschen.
+                // Für Fünftklässler ist ein "Alles löschen" oft einfacher zu verstehen.
+                cutLines.forEach(l => pizzaGroup.remove(l));
+                cutLines = [];
+                cutAngles = [];
+            }
+        }
+
+        function finishCutting() {
+            if (cutAngles.length === 0) {
+                // Spezialfall: Keine Schnitte gemacht. Nur erlaubt, wenn Nenner = 1 (Gibt es hier nicht)
+                showFeedback("Du musst die Pizza zuerst schneiden!", false);
+                return;
+            }
+
+            // Winkel sortieren
+            cutAngles.sort((a, b) => a - b);
+            
+            const expectedPieces = currentTask.denominator;
+            const actualPieces = cutAngles.length;
+
+            if (actualPieces !== expectedPieces) {
+                showFeedback(`Das sind ${actualPieces} Stücke, es sollen aber ${expectedPieces} sein!`, false);
+                undoCut();
+                return;
+            }
+
+            // Überprüfen, ob die Stücke ungefähr gleich groß sind
+            const targetAngleDiff = (Math.PI * 2) / expectedPieces;
+            const toleranceAngle = targetAngleDiff * 0.4; // 40% Toleranz beim Winkel
+
+            let isEquallySized = true;
+            for (let i = 0; i < cutAngles.length; i++) {
+                let nextIdx = (i + 1) % cutAngles.length;
+                let diff = cutAngles[nextIdx] - cutAngles[i];
+                if (diff < 0) diff += Math.PI * 2; // Wenn es über den Nullpunkt geht
+
+                if (Math.abs(diff - targetAngleDiff) > toleranceAngle) {
+                    isEquallySized = false;
+                    break;
+                }
+            }
+
+            if (isEquallySized) {
+                showFeedback("Gut geschnitten!", true);
+                startSelectionPhase();
+            } else {
+                showFeedback("Die Stücke sind nicht gleich groß. Versuch es nochmal!", false);
+                undoCut();
+            }
+        }
+
+        // --- Aufgabe 2: Phase 2 (Auswählen) ---
+        function startSelectionPhase() {
+            gameState = 'TASK2_SELECT';
+            document.getElementById('task-2-cut-ui').style.display = 'none';
+            document.getElementById('instruction-select').innerText = `Wähle nun ${currentTask.numerator} Stücke aus, indem du sie antippst!`;
+            document.getElementById('task-2-select-ui').style.display = 'block';
+
+            // Selektions-Keile generieren
+            selectionWedges = [];
+            selectedCount = 0;
+            
+            for (let i = 0; i < cutAngles.length; i++) {
+                let startAngle = cutAngles[i];
+                let nextIdx = (i + 1) % cutAngles.length;
+                let endAngle = cutAngles[nextIdx];
+                if (endAngle <= startAngle) endAngle += Math.PI * 2;
+                
+                let midAngle = startAngle + (endAngle - startAngle) / 2;
+
+                // Unsichtbarer Keil (wird beim Antippen sichtbar)
+                const geo = new THREE.CylinderGeometry(PIZZA_RADIUS * 0.98, PIZZA_RADIUS * 0.98, 0.02, 16, 1, false, startAngle, endAngle - startAngle);
+                const mat = new THREE.MeshBasicMaterial({ color: 0x2ecc71, transparent: true, opacity: 0.0 });
+                const wedge = new THREE.Mesh(geo, mat);
+                wedge.position.y = 0.02; // Leicht über der Pizza
+                
+                // Metadaten für Logik
+                wedge.userData = { 
+                    selected: false, 
+                    startA: startAngle, 
+                    endA: endAngle > Math.PI*2 ? endAngle - Math.PI*2 : endAngle
+                };
+                
+                pizzaGroup.add(wedge);
+                selectionWedges.push(wedge);
+            }
+        }
+
+        function handleSelectTap(point) {
+            let angle = Math.atan2(point.z, point.x);
+            if (angle < 0) angle += Math.PI * 2;
+
+            // Finde das passende Stück
+            for (let wedge of selectionWedges) {
+                let s = wedge.userData.startA;
+                let e = wedge.userData.endA;
+                let isInside = false;
+
+                if (s < e) {
+                    isInside = (angle >= s && angle <= e);
+                } else {
+                    // Geht über den Nullpunkt
+                    isInside = (angle >= s || angle <= e);
+                }
+
+                if (isInside) {
+                    wedge.userData.selected = !wedge.userData.selected;
+                    wedge.material.opacity = wedge.userData.selected ? 0.7 : 0.0;
+                    selectedCount += wedge.userData.selected ? 1 : -1;
+                    break;
+                }
+            }
+        }
+
+        function checkTask2() {
+            if (selectedCount === currentTask.numerator) {
+                showFeedback("Perfekt! +1 Punkt", true);
+                score++;
+                document.getElementById('score').innerText = score;
+                setTimeout(startRandomTask, 2000);
+            } else {
+                showFeedback(`Du hast ${selectedCount} ausgewählt, es sollen aber ${currentTask.numerator} sein!`, false);
+            }
+        }
+
+
+        // --- Helfer: Pizza Visuell Bauen ---
+        function createPizzaSlice(startAngle, lengthAngle) {
+            // Teig (Boden und Rand)
+            const doughGeo = new THREE.CylinderGeometry(PIZZA_RADIUS, PIZZA_RADIUS, 0.01, 32, 1, false, startAngle, lengthAngle);
+            const doughMat = new THREE.MeshLambertMaterial({ color: 0xd4a373 });
+            const dough = new THREE.Mesh(doughGeo, doughMat);
+            pizzaGroup.add(dough);
+
+            // Käse/Soße (Etwas kleiner, etwas höher)
+            const cheeseGeo = new THREE.CylinderGeometry(PIZZA_RADIUS * 0.9, PIZZA_RADIUS * 0.9, 0.012, 32, 1, false, startAngle, lengthAngle);
+            const cheeseMat = new THREE.MeshLambertMaterial({ color: 0xffda5a });
+            const cheese = new THREE.Mesh(cheeseGeo, cheeseMat);
+            cheese.position.y = 0.001;
+            pizzaGroup.add(cheese);
+            
+            // Ein bisschen Salami zufällig verteilen für die Optik
+            if (lengthAngle > 0.5) {
+                const salamiGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.005, 16);
+                const salamiMat = new THREE.MeshLambertMaterial({ color: 0xc0392b });
+                
+                // Setze 1-3 Salami-Scheiben pro großem Stück
+                const numSalami = Math.floor(Math.random() * 3) + 1;
+                for(let i=0; i<numSalami; i++) {
+                    const salami = new THREE.Mesh(salamiGeo, salamiMat);
+                    // Zufällige Position auf dem Slice
+                    const r = Math.random() * (PIZZA_RADIUS * 0.7);
+                    const a = startAngle + (Math.random() * lengthAngle);
+                    salami.position.set(Math.cos(a) * r, 0.01, Math.sin(a) * r);
+                    pizzaGroup.add(salami);
+                }
+            }
+        }
+
+        // --- UI Feedback System ---
+        function showFeedback(text, isSuccess) {
+            const toast = document.getElementById('feedback-toast');
+            toast.innerText = text;
+            toast.className = isSuccess ? 'feedback-success' : 'feedback-error';
+            toast.style.opacity = 1;
+            
+            setTimeout(() => {
+                toast.style.opacity = 0;
+            }, 3000);
+        }
+
+        // --- Standard ThreeJS Boilerplate ---
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            renderer.setAnimationLoop(render);
+        }
+
+        function render(timestamp, frame) {
+            if (frame && gameState === 'FINDING_SURFACE') {
+                const referenceSpace = renderer.xr.getReferenceSpace();
+                const session = renderer.xr.getSession();
+
+                if (!hitTestSourceRequested) {
+                    session.requestReferenceSpace('viewer').then((referenceSpace) => {
+                        session.requestHitTestSource({ space: referenceSpace }).then((source) => {
+                            hitTestSource = source;
+                        });
+                    });
+                    session.addEventListener('end', () => {
+                        hitTestSourceRequested = false;
+                        hitTestSource = null;
+                        gameState = 'INIT';
+                        document.getElementById('start-info').style.display = 'none';
+                        document.getElementById('header').style.display = 'none';
+                        resetTaskUI();
+                    });
+                    hitTestSourceRequested = true;
+                }
+
+                if (hitTestSource) {
+                    const hitTestResults = frame.getHitTestResults(hitTestSource);
+                    if (hitTestResults.length > 0) {
+                        const hit = hitTestResults[0];
+                        reticle.visible = true;
+                        reticle.matrix.fromArray(hit.getPose(referenceSpace).transform.matrix);
+                    } else {
+                        reticle.visible = false;
+                    }
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
