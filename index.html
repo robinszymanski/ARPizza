@@ -112,26 +112,33 @@
         /* Aufgabe 2: Regler UI */
         #task-2-ui { display: none; }
         
-        .slider-container {
+        /* Neuer Vertikaler Slider */
+        .vertical-slider-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 180px;
             margin: 15px 0;
-            text-align: left;
             background: #f8f9fa;
-            padding: 10px;
             border-radius: 10px;
+            padding: 10px;
         }
-        .slider-container label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: bold;
-            font-size: 0.95rem;
+        
+        .vertical-slider {
+            -webkit-appearance: slider-vertical;
+            appearance: slider-vertical;
+            width: 30px;
+            height: 100%;
+            outline: none;
+            accent-color: #d35400;
+            writing-mode: bt-lr; /* Fallback */
         }
+
         .slider-val {
             color: #2980b9;
-            font-size: 1.1rem;
-        }
-        input[type=range] {
-            width: 100%;
-            accent-color: #d35400;
+            font-size: 2.2rem;
+            font-weight: bold;
+            margin-top: 5px;
         }
 
         .button-group {
@@ -223,19 +230,18 @@
                 </div>
             </div>
 
-            <!-- Aufgabe 2: Pizza mit Reglern einstellen -->
+            <!-- Aufgabe 2: Pizza mit einem Slider einstellen -->
             <div id="task-2-ui">
                 <div class="task-title">Aufgabe 2</div>
                 <div class="task-instruction" id="instruction-task2">Stelle den Bruch X/Y dar!</div>
                 
-                <div class="slider-container">
-                    <label>In wie viele Stücke aufteilen? (Nenner): <span id="val-denominator" class="slider-val">1</span></label>
-                    <input type="range" id="slider-denominator" min="1" max="10" value="1">
-                </div>
-                
-                <div class="slider-container">
-                    <label>Wie viele Stücke belegen? (Zähler): <span id="val-numerator" class="slider-val">0</span></label>
-                    <input type="range" id="slider-numerator" min="0" max="1" value="0">
+                <div class="vertical-slider-container">
+                    <!-- Vertikaler Slider (1 oben, 0 unten) -->
+                    <input type="range" id="slider-size" class="vertical-slider" min="0" max="1" step="0.01" value="0" orient="vertical">
+                    <div style="margin-left: 30px; text-align: center;">
+                        <div style="font-weight: 600; color: #555;">Pizza-Anteil</div>
+                        <div id="val-size" class="slider-val">0%</div>
+                    </div>
                 </div>
 
                 <div class="button-group">
@@ -322,20 +328,10 @@
             document.getElementById('btn-check-task1').addEventListener('click', checkTask1);
             document.getElementById('btn-check-task2').addEventListener('click', checkTask2);
 
-            // Slider Event Listener (Aufgabe 2)
-            document.getElementById('slider-denominator').addEventListener('input', (e) => {
-                const numSlider = document.getElementById('slider-numerator');
-                numSlider.max = e.target.value;
-                if (parseInt(numSlider.value) > parseInt(e.target.value)) {
-                    numSlider.value = e.target.value;
-                }
-                document.getElementById('val-denominator').innerText = e.target.value;
-                document.getElementById('val-numerator').innerText = numSlider.value;
-                updateTask2Pizza();
-            });
-
-            document.getElementById('slider-numerator').addEventListener('input', (e) => {
-                document.getElementById('val-numerator').innerText = e.target.value;
+            // Slider Event Listener für den neuen Pizza-Größen Regler
+            document.getElementById('slider-size').addEventListener('input', (e) => {
+                const percentage = Math.round(e.target.value * 100);
+                document.getElementById('val-size').innerText = percentage + '%';
                 updateTask2Pizza();
             });
 
@@ -437,16 +433,9 @@
             
             document.getElementById('instruction-task2').innerText = `Stelle den Bruch ${num}/${den} dar!`;
             
-            const sliderDenom = document.getElementById('slider-denominator');
-            const sliderNum = document.getElementById('slider-numerator');
-            
-            // Setze Regler zurück auf 0/1
-            sliderDenom.value = 1;
-            sliderNum.value = 0;
-            sliderNum.max = 1;
-            
-            document.getElementById('val-denominator').innerText = 1;
-            document.getElementById('val-numerator').innerText = 0;
+            const slider = document.getElementById('slider-size');
+            slider.value = 0;
+            document.getElementById('val-size').innerText = '0%';
 
             document.getElementById('task-panel').style.display = 'block';
             document.getElementById('task-2-ui').style.display = 'block';
@@ -456,30 +445,38 @@
 
         function updateTask2Pizza() {
             clearPizza();
-            const n = parseInt(document.getElementById('slider-denominator').value);
-            const m = parseInt(document.getElementById('slider-numerator').value);
+            const fillAmount = parseFloat(document.getElementById('slider-size').value);
             
-            const anglePerSlice = (Math.PI * 2) / n;
-            const gap = n > 1 ? 0.05 : 0; 
+            // Leicht transparenten Kreis als Schätzhilfe für die "ganze" Pizza einzeichnen
+            const grayGeo = new THREE.CylinderGeometry(PIZZA_RADIUS, PIZZA_RADIUS, 0.003, 32);
+            const grayMat = new THREE.MeshBasicMaterial({ color: 0xaaaaaa, transparent: true, opacity: 0.25 });
+            const graySlice = new THREE.Mesh(grayGeo, grayMat);
+            pizzaGroup.add(graySlice);
             
-            for (let i = 0; i < n; i++) {
-                // Stücke unter 'm' sind normal (belegt), der Rest ist ausgegraut
-                const isNormal = i < m;
-                createPizzaSlice(i * anglePerSlice, anglePerSlice - gap, isNormal);
+            if (fillAmount > 0) {
+                // Berechne den Winkel basierend auf dem Slider von 0.0 bis 1.0
+                const angle = fillAmount * (Math.PI * 2);
+                // Erstelle ein großes zusammenhängendes Stück
+                createPizzaSlice(0, angle, true);
             }
         }
 
         function checkTask2() {
-            const n = parseInt(document.getElementById('slider-denominator').value);
-            const m = parseInt(document.getElementById('slider-numerator').value);
+            const fillAmount = parseFloat(document.getElementById('slider-size').value);
+            const target = currentTask.numerator / currentTask.denominator;
             
-            if (n > 0 && (m / n === currentTask.numerator / currentTask.denominator)) {
-                showFeedback("Perfekt! +1 Punkt", true);
+            // Da ein stufenloser Regler schwer haargenau zu treffen ist, erlauben wir 8% Toleranz
+            const tolerance = 0.08; 
+            
+            if (Math.abs(fillAmount - target) <= tolerance) {
+                showFeedback("Perfekt geschätzt! +1 Punkt", true);
                 score++;
                 document.getElementById('score').innerText = score;
                 setTimeout(startRandomTask, 2000);
             } else {
-                showFeedback(`Fehler! Das ist ${m}/${n}, gesucht war aber ${currentTask.numerator}/${currentTask.denominator}.`, false);
+                const percentFill = Math.round(fillAmount * 100);
+                const percentTarget = Math.round(target * 100);
+                showFeedback(`Zu ungenau! Das waren ca. ${percentFill}%, gesucht waren ${currentTask.numerator}/${currentTask.denominator} (ca. ${percentTarget}%).`, false);
             }
         }
 
@@ -498,11 +495,11 @@
                 cheese.position.y = 0.001;
                 pizzaGroup.add(cheese);
                 
-                if (lengthAngle > 0.5) {
+                if (lengthAngle > 0.1) {
                     const salamiGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.005, 16);
                     const salamiMat = new THREE.MeshLambertMaterial({ color: 0xc0392b });
                     
-                    // Salami-Menge an die Größe des Stücks anpassen (da es jetzt ein zusammenhängendes ist)
+                    // Salami-Menge an die Größe des Stücks anpassen
                     const numSalami = Math.floor((lengthAngle / (Math.PI * 2)) * 7) + 1; 
                     for(let i=0; i<numSalami; i++) {
                         const salami = new THREE.Mesh(salamiGeo, salamiMat);
