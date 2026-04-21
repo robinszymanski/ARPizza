@@ -501,7 +501,9 @@
                 if (lengthAngle > 0.5) {
                     const salamiGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.005, 16);
                     const salamiMat = new THREE.MeshLambertMaterial({ color: 0xc0392b });
-                    const numSalami = Math.floor(Math.random() * 3) + 1;
+                    
+                    // Salami-Menge an die Größe des Stücks anpassen (da es jetzt ein zusammenhängendes ist)
+                    const numSalami = Math.floor((lengthAngle / (Math.PI * 2)) * 7) + 1; 
                     for(let i=0; i<numSalami; i++) {
                         const salami = new THREE.Mesh(salamiGeo, salamiMat);
                         const r = Math.random() * (PIZZA_RADIUS * 0.7);
